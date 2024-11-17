@@ -1,0 +1,11 @@
+[package]
+name = "wol-relay"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pnet = "0.35"
+tokio = { version = "1.38", features = [ "full" ] }
+tokio-util = "0.7"
+clap = { version = "4.5", features = [ "derive" ]}
+ctrlc = "3.4"
