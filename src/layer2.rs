@@ -16,6 +16,8 @@ use pnet::packet::{
 };
 use tokio_util::sync::CancellationToken;
 
+use crate::config::Layer2Config;
+
 
 pub const ETHERTYPE_WOL: u16 = 0x0842;
 pub const ETHERTYPE_IP4: u16 = 0x0800;
@@ -32,7 +34,13 @@ fn l2_wol_check(pkt: &EthernetPacket) -> bool {
         crate::common::check_wol_payload(pkt.payload())
 }
 
-pub fn l2_worker(interfaces: &[NetworkInterface], token: CancellationToken) -> Vec<JoinHandle<()>> {
+pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<()>> {
+    let interfaces: Vec<NetworkInterface> = pnet::datalink::interfaces()
+        //.into_iter()
+        //.filter(|iface| !opts.l2_exclude_if.contains(&iface.name))
+        //.collect()
+        ;
+
     let mut handles: Vec<JoinHandle<()>> = Vec::new();
     let mut senders: Vec<(u32, Box<dyn DataLinkSender>)> = Vec::new();
     let (mpsc_tx, mpsc_rx) = mpsc::sync_channel::<WolMessage>(8);
