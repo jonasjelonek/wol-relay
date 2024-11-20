@@ -14,3 +14,10 @@ serde = { version = "1.0", features = [ "derive" ] }
 serde_yml = "0"
 log = "0.4"
 simple_logger = { version = "5.0", default-features = false, features = [ "colors" ] }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = "s"
+strip = "symbols"
+panic = "abort"
