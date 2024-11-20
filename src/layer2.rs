@@ -52,12 +52,12 @@ pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<
 
     for iface in interfaces {
         if iface.is_loopback() || !iface.is_up() { continue; }
-        log::debug!("Creating listener for interface '{}'", iface.name);
 
         let (tx, mut rx) = match datalink::channel(&iface, dl_cfg) {
             Ok(Channel::Ethernet(tx, rx )) => (tx, rx),
             Ok(_) | Err(_) => continue,
         };
+        log::debug!("listening on interface '{}'", iface.name);
 
         senders.push((iface.index, tx));
 
@@ -72,7 +72,7 @@ pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<
          */
         let h = std::thread::spawn(move || {
             loop {
-                if token.is_cancelled() { println!("exit {}", iface.name); break; }
+                if token.is_cancelled() { log::trace!("[listener][{}] exit", iface.name); break; }
 
                 let packet = match rx.next() {
                     Ok(pkt) => pkt,
@@ -82,9 +82,13 @@ pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<
 
                 match EthernetPacket::new(packet) {
                     Some(eth_pkt) => {
+                        log::trace!("[listener][{}] ethernet packet from {} to {} of type {}",
+                            iface.name, eth_pkt.get_source(), eth_pkt.get_destination(),
+                            eth_pkt.get_ethertype());
+
                         if !l2_wol_check(&eth_pkt) { continue; }
 
-                        log::debug!("[listener] received Ethernet WOL frame on interface '{}'", iface.name);
+                        log::debug!("[listener][{}] received WakeOnLan Ethernet packet", iface.name);
 
                         let pkt = EthernetPacket::owned(eth_pkt.packet().to_vec()).unwrap();
                         mpsc_tx.send(WolMessage { iface: iface.clone(), pkt }).unwrap();
@@ -100,7 +104,7 @@ pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<
     let token = token.clone();
     let h = std::thread::spawn(move || {
         loop {
-            if token.is_cancelled() { println!("exit rx"); break; }
+            if token.is_cancelled() { println!("[relay] exit"); break; }
 
             let wol_msg = match mpsc_rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(msg) => msg,
@@ -108,7 +112,7 @@ pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             };
             
-            log::debug!("[relay] received WOL packet from {}", wol_msg.pkt.get_source());
+            log::debug!("[relay] relaying WakeOnLan packet from {}", wol_msg.pkt.get_source());
 
             for (if_idx, sender) in senders.iter_mut() {
                 if *if_idx != wol_msg.iface.index {
