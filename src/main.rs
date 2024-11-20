@@ -1,7 +1,5 @@
 use std::{path::PathBuf, thread::JoinHandle};
 
-use pnet::datalink::NetworkInterface;
-
 use tokio_util::sync::CancellationToken;
 
 use clap::Parser;
@@ -39,7 +37,9 @@ fn main() {
         l2_handles.extend(layer2::l2_worker(l2_cfg, cancel_token));
     }
 
-    layer4::l4_worker();
+    if let Some(l4_cfg) = cfg.layer4 {
+        layer4::l4_worker(l4_cfg);
+    }
 
     // wait for workers
     l2_handles.into_iter().for_each(|h| { let _ = h.join(); });

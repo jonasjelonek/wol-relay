@@ -1,7 +1,11 @@
-use std::{fmt::Debug, net::Ipv4Addr};
-use std::net::IpAddr;
+use std::fmt::Debug;
 
 use serde::{Deserialize, Deserializer};
+
+use crate::{
+    layer2::Layer2Config,
+    layer4::Layer4Config
+};
 
 /// Deserializes an absent field as None and an unset field as T::default. 
 /// 
@@ -14,26 +18,6 @@ where
     Ok(Option::deserialize(deserializer)?.or(Some(T::default())))
 }
 
-
-#[derive(Debug, Deserialize, Default)]
-pub struct Layer2Config {
-    interfaces: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Layer4Config {
-    listen_addr: IpAddr,
-    listen_port: u16,
-}
-
-impl Default for Layer4Config {
-    fn default() -> Self {
-        Self {
-            listen_addr: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-            listen_port: 9,
-        }
-    }
-}
 
 #[derive(Debug, Deserialize)]
 pub struct Config {

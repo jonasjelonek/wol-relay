@@ -10,5 +10,5 @@ tokio-util = "0.7"
 clap = { version = "4.5", features = [ "derive" ]}
 ctrlc = "3.4"
 shellexpand = "3.1"
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = [ "derive" ] }
 serde_yml = "0"

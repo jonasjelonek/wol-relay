@@ -2,6 +2,7 @@ use std::thread::JoinHandle;
 use std::sync::mpsc;
 use std::time::Duration;
 use std::io::ErrorKind;
+use std::fmt::Debug;
 
 use pnet::datalink::{
     self, 
@@ -15,13 +16,14 @@ use pnet::packet::{
     Packet
 };
 use tokio_util::sync::CancellationToken;
-
-use crate::config::Layer2Config;
-
+use serde::Deserialize;
 
 pub const ETHERTYPE_WOL: u16 = 0x0842;
-pub const ETHERTYPE_IP4: u16 = 0x0800;
-pub const ETHERTYPE_IP6: u16 = 0x86DD;
+
+#[derive(Debug, Deserialize, Default)]
+pub struct Layer2Config {
+    pub interfaces: Vec<String>,
+}
 
 struct WolMessage<'a> {
     iface: NetworkInterface,
@@ -36,10 +38,9 @@ fn l2_wol_check(pkt: &EthernetPacket) -> bool {
 
 pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<()>> {
     let interfaces: Vec<NetworkInterface> = pnet::datalink::interfaces()
-        //.into_iter()
-        //.filter(|iface| !opts.l2_exclude_if.contains(&iface.name))
-        //.collect()
-        ;
+        .into_iter()
+        .filter(|iface| cfg.interfaces.contains(&iface.name))
+        .collect();
 
     let mut handles: Vec<JoinHandle<()>> = Vec::new();
     let mut senders: Vec<(u32, Box<dyn DataLinkSender>)> = Vec::new();
@@ -65,9 +66,9 @@ pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<
         let iface = iface.clone();
 
         /* 
-         * Not using tasks here, they run in an event loop. Due to the amount of incoming Ethernet frames, this
-         * can lead to the issue that the TX tasks consume most of the time and the RX task won't run unless the
-         * TX tasks yield control (e.g. when the mpsc's buffer is full and then send blocks).
+         * Not using tasks here. Due to the amount of incoming Ethernet frames, this can lead to the issue that
+         * the TX tasks consume most of the time and the RX task won't run unless the TX tasks yield control
+         * (e.g. when the mpsc's buffer is full and then send blocks).
          */
         let h = std::thread::spawn(move || {
             loop {
