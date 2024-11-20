@@ -1,5 +1,7 @@
 use std::{path::PathBuf, thread::JoinHandle};
 
+use log::LevelFilter;
+use simple_logger::SimpleLogger;
 use tokio_util::sync::CancellationToken;
 
 use clap::Parser;
@@ -13,10 +15,20 @@ mod layer4;
 struct Cli {
     #[arg(short, long = "config-file")]
     config_file: PathBuf,
+
+    #[arg(short, long, default_value_t = LevelFilter::Warn)]
+    log: LevelFilter,
 }
 
 fn main() {
     let opts = Cli::parse();
+
+    SimpleLogger::new()
+        .with_level(opts.log)
+        .env()
+        .init()
+        .unwrap();
+
     let cfg_path = PathBuf
         ::from(shellexpand::tilde(&opts.config_file.to_string_lossy()).into_owned())
         .canonicalize()
