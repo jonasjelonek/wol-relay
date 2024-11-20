@@ -13,10 +13,10 @@ mod layer4;
 
 #[derive(Parser)]
 struct Cli {
-    #[arg(short, long = "config-file")]
+    #[arg(short, long)]
     config_file: PathBuf,
 
-    #[arg(short, long, default_value_t = LevelFilter::Warn)]
+    #[arg(short, long, default_value_t = LevelFilter::Info)]
     log: LevelFilter,
 }
 
@@ -40,7 +40,7 @@ fn main() {
 	let sigint_token = cancel_token.clone();
 
     ctrlc::set_handler(move || {
-		println!("Received SIGINT");
+		log::info!("Interrupted by SIGINT");
 		sigint_token.cancel();
 	}).expect("Failed to install SIGINT handler");
 

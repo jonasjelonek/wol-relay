@@ -52,7 +52,7 @@ pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<
 
     for iface in interfaces {
         if iface.is_loopback() || !iface.is_up() { continue; }
-        println!("Creating listener for interface '{}'", iface.name);
+        log::debug!("Creating listener for interface '{}'", iface.name);
 
         let (tx, mut rx) = match datalink::channel(&iface, dl_cfg) {
             Ok(Channel::Ethernet(tx, rx )) => (tx, rx),
@@ -84,7 +84,7 @@ pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<
                     Some(eth_pkt) => {
                         if !l2_wol_check(&eth_pkt) { continue; }
 
-                        println!("Received Ethernet WOL frame on interface '{}'", iface.name);
+                        log::debug!("[listener] received Ethernet WOL frame on interface '{}'", iface.name);
 
                         let pkt = EthernetPacket::owned(eth_pkt.packet().to_vec()).unwrap();
                         mpsc_tx.send(WolMessage { iface: iface.clone(), pkt }).unwrap();
@@ -108,7 +108,7 @@ pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             };
             
-            println!("Received a WOL packet from {}", wol_msg.pkt.get_source());
+            log::debug!("[relay] received WOL packet from {}", wol_msg.pkt.get_source());
 
             for (if_idx, sender) in senders.iter_mut() {
                 if *if_idx != wol_msg.iface.index {
