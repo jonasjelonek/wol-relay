@@ -1,7 +1,9 @@
-use std::{path::PathBuf, thread::JoinHandle};
+use std::{path::PathBuf, thread};
 
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
+
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use clap::Parser;
@@ -20,7 +22,8 @@ struct Cli {
     log: LevelFilter,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let opts = Cli::parse();
 
     SimpleLogger::new()
@@ -44,15 +47,19 @@ fn main() {
 		sigint_token.cancel();
 	}).expect("Failed to install SIGINT handler");
 
-    let mut l2_handles: Vec<JoinHandle<()>> = Vec::new();
+    let mut l2_handles: Vec<thread::JoinHandle<()>> = Vec::new();
     if let Some(l2_cfg) = cfg.layer2 {
-        l2_handles.extend(layer2::l2_worker(l2_cfg, cancel_token));
+        l2_handles.extend(layer2::l2_worker(l2_cfg, cancel_token.clone()));
     }
 
+    let mut l4_handles: Option<JoinSet<()>> = None;
     if let Some(l4_cfg) = cfg.layer4 {
-        layer4::l4_worker(l4_cfg);
+        l4_handles = Some(layer4::l4_worker(l4_cfg, cancel_token));
     }
 
     // wait for workers
     l2_handles.into_iter().for_each(|h| { let _ = h.join(); });
+    if let Some(tasks) = l4_handles {
+        tasks.join_all().await;
+    }
 }
