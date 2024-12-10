@@ -40,8 +40,6 @@ const IPV4_PRIVATE_B: Result<Ipv4Network, IpNetworkError> = Ipv4Network::new(Ipv
 const IPV4_PRIVATE_C: Result<Ipv4Network, IpNetworkError> = Ipv4Network::new(Ipv4Addr::new(192, 168, 0, 0), 16);
 const IPV4_UNSPEC: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
-const COOLDOWN_DUR: Duration = Duration::from_millis(500);
-
 struct WolMessage {
     src: SocketAddr,
     target: MacAddr,
@@ -176,7 +174,7 @@ pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
             };
 
             if let Some(t) = cooldown_list.get(&msg.target) {
-                if t.elapsed() < COOLDOWN_DUR {
+                if t.elapsed() < common::COOLDOWN_DUR {
                     continue;
                 } else {
                     cooldown_list.remove(&msg.target);

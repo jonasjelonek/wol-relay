@@ -1,8 +1,9 @@
 use std::thread::JoinHandle;
 use std::sync::mpsc;
-use std::time::Duration;
 use std::io::ErrorKind;
 use std::fmt::Debug;
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use pnet::datalink::{
     self, 
@@ -15,8 +16,11 @@ use pnet::packet::{
     ethernet::EthernetPacket,
     Packet
 };
+use pnet::util::MacAddr;
 use tokio_util::sync::CancellationToken;
 use serde::Deserialize;
+
+use crate::common;
 
 pub const ETHERTYPE_WOL: u16 = 0x0842;
 
@@ -28,6 +32,7 @@ pub struct Layer2Config {
 struct WolMessage<'a> {
     iface: NetworkInterface,
     pkt: EthernetPacket<'a>,
+    target: MacAddr,
 }
 
 fn l2_wol_check(pkt: &EthernetPacket) -> bool {
@@ -91,7 +96,11 @@ pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<
                         log::debug!("[listener][{}] received WakeOnLan Ethernet packet", iface.name);
 
                         let pkt = EthernetPacket::owned(eth_pkt.packet().to_vec()).unwrap();
-                        mpsc_tx.send(WolMessage { iface: iface.clone(), pkt }).unwrap();
+                        mpsc_tx.send(WolMessage { 
+                            iface: iface.clone(),
+                            pkt,
+                            target: common::wol_payload_get_target_mac(eth_pkt.payload()),
+                        }).unwrap();
                     },
                     None => continue,
                 }
@@ -103,6 +112,8 @@ pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<
 
     let token = token.clone();
     let h = std::thread::spawn(move || {
+        let mut cooldown_list: HashMap<MacAddr, Instant> = HashMap::new();
+
         loop {
             if token.is_cancelled() { println!("[relay] exit"); break; }
 
@@ -112,6 +123,14 @@ pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             };
             
+            if let Some(t) = cooldown_list.get(&wol_msg.target) {
+                if t.elapsed() < common::COOLDOWN_DUR {
+                    continue;
+                } else {
+                    cooldown_list.remove(&wol_msg.target);
+                }
+            }
+
             log::debug!("[relay] relaying WakeOnLan packet from {}", wol_msg.pkt.get_source());
 
             for (if_idx, sender) in senders.iter_mut() {

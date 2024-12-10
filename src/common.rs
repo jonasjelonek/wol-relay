@@ -1,8 +1,11 @@
+use std::time::Duration;
+
 use pnet::util::MacAddr;
 
 
 pub const BROADCAST_MAC: [u8; 6] = [ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff ];
 
+pub const COOLDOWN_DUR: Duration = Duration::from_millis(500);
 
 pub fn check_wol_payload(payload: &[u8]) -> bool {
     if payload.len() < 102 { return false; }
