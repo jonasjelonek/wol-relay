@@ -1,4 +1,5 @@
-use std::time::Duration;
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 use std::{fmt::Debug, net::Ipv4Addr};
 use std::net::{IpAddr, SocketAddr, SocketAddrV4};
 
@@ -7,6 +8,7 @@ use pnet::ipnetwork::{
     Ipv4Network,
     IpNetworkError
 };
+use pnet::util::MacAddr;
 use serde::Deserialize;
 
 use tokio::{
@@ -38,8 +40,11 @@ const IPV4_PRIVATE_B: Result<Ipv4Network, IpNetworkError> = Ipv4Network::new(Ipv
 const IPV4_PRIVATE_C: Result<Ipv4Network, IpNetworkError> = Ipv4Network::new(Ipv4Addr::new(192, 168, 0, 0), 16);
 const IPV4_UNSPEC: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
+const COOLDOWN_DUR: Duration = Duration::from_millis(500);
+
 struct WolMessage {
     src: SocketAddr,
+    target: MacAddr,
     msg: Box<[u8]>,
 }
 
@@ -108,6 +113,7 @@ pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
         Some(addr) => vec![addr.clone()],
         None => cfg.listen_on,
     };
+    let networks = sanitize_destination_networks(cfg.relay_to);
 
     for addr in listen_on {
         let mpsc_tx = mpsc_tx.clone();
@@ -122,7 +128,7 @@ pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
 
                 let mut buf: [u8; 128] = [0; 128];
                 let (len, from) = match tokio::time::timeout(
-                    Duration::from_millis(250), 
+                    Duration::from_millis(100), 
                     sock.recv_from(&mut buf)
                 ).await {
                     Ok(res) => res.unwrap(),
@@ -137,13 +143,13 @@ pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
 
                 mpsc_tx.send(WolMessage {
                     src: from,
+                    target: common::wol_payload_get_target_mac(&buf[..len]),
                     msg: Box::from(&buf[..len])
                 }).await.unwrap();
             }
         });
     }
 
-    let networks = sanitize_destination_networks(cfg.relay_to);
     log::debug!("Relaying to {} networks", networks.len());
     for net in networks.iter() {
         log::debug!("relay to network: {}", net);
@@ -155,6 +161,8 @@ pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
         ).await.unwrap();
         sock.set_broadcast(true).unwrap();
 
+        let mut cooldown_list: HashMap<MacAddr, Instant> = HashMap::new();
+        
         loop {
             if token.is_cancelled() { break; }
 
@@ -166,6 +174,15 @@ pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
                 Ok(_) => break,
                 Err(_) => continue,
             };
+
+            if let Some(t) = cooldown_list.get(&msg.target) {
+                if t.elapsed() < COOLDOWN_DUR {
+                    continue;
+                } else {
+                    cooldown_list.remove(&msg.target);
+                }
+            }
+
             log::debug!("relay message from {} to networks", msg.src);
 
             for net in networks.iter() {
@@ -175,6 +192,8 @@ pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
                     SocketAddr::new(net.broadcast(), 9)
                 ).await.unwrap();
             }
+
+            cooldown_list.insert(msg.target, Instant::now());
         }
     });
 
