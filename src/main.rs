@@ -1,6 +1,9 @@
-use std::{path::PathBuf, thread};
+use std::{net::SocketAddr, path::PathBuf, thread};
 
+use layer2::Layer2Config;
+use layer4::Layer4Config;
 use log::LevelFilter;
+use pnet::ipnetwork::IpNetwork;
 use simple_logger::SimpleLogger;
 
 use tokio::task::JoinSet;
@@ -9,7 +12,6 @@ use tokio_util::sync::CancellationToken;
 use clap::Parser;
 
 mod common;
-mod config;
 mod layer2;
 mod layer4;
 
@@ -20,6 +22,21 @@ struct Cli {
 
     #[arg(short, long, default_value_t = LevelFilter::Info)]
     log: LevelFilter,
+
+    #[arg(long)]
+    l2: bool,
+
+    #[arg(long)]
+    l2_if: Vec<String>,
+
+    #[arg(long)]
+    l4: bool,
+
+    #[arg(long)]
+    l4_listen_on: Vec<SocketAddr>,
+    
+    #[arg(long)]
+    l4_relay_to: Vec<IpNetwork>,
 }
 
 #[tokio::main]
@@ -32,13 +49,6 @@ async fn main() {
         .init()
         .unwrap();
 
-    let cfg_path = PathBuf
-        ::from(shellexpand::tilde(&opts.config_file.to_string_lossy()).into_owned())
-        .canonicalize()
-        .expect("Invalid config file path specified");
-    let cfg_str = std::fs::read_to_string(cfg_path).unwrap();
-    let cfg: config::Config = serde_yml::from_str(&cfg_str).unwrap();
-
     let cancel_token = CancellationToken::new();
 	let sigint_token = cancel_token.clone();
 
@@ -48,12 +58,17 @@ async fn main() {
 	}).expect("Failed to install SIGINT handler");
 
     let mut l2_handles: Vec<thread::JoinHandle<()>> = Vec::new();
-    if let Some(l2_cfg) = cfg.layer2 {
+    if opts.l2 {
+        let l2_cfg = Layer2Config { interfaces: opts.l2_if };
         l2_handles.extend(layer2::l2_worker(l2_cfg, cancel_token.clone()));
     }
 
     let mut l4_handles: Option<JoinSet<()>> = None;
-    if let Some(l4_cfg) = cfg.layer4 {
+    if opts.l4 {
+        let l4_cfg = Layer4Config {
+            listen_on: opts.l4_listen_on,
+            relay_to: opts.l4_relay_to,
+        };
         l4_handles = Some(layer4::l4_worker(l4_cfg, cancel_token));
     }
 

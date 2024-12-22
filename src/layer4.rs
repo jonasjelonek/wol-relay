@@ -9,7 +9,6 @@ use pnet::ipnetwork::{
     IpNetworkError
 };
 use pnet::util::MacAddr;
-use serde::Deserialize;
 
 use tokio::{
     net::UdpSocket,
@@ -20,19 +19,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::common;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct Layer4Config {
-    listen_on: Vec<SocketAddr>,
-    relay_to: Vec<IpNetwork>,
-}
-
-impl Default for Layer4Config {
-    fn default() -> Self {
-        Self {
-            listen_on: vec![SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 9))],
-            relay_to: vec![IpNetwork::V4(Ipv4Network::new(Ipv4Addr::UNSPECIFIED, 0).unwrap())]
-        }
-    }
+    pub listen_on: Vec<SocketAddr>,
+    pub relay_to: Vec<IpNetwork>,
 }
 
 const IPV4_PRIVATE_A: Result<Ipv4Network, IpNetworkError> = Ipv4Network::new(Ipv4Addr::new(10, 0, 0, 0), 8);
@@ -101,12 +91,6 @@ pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
     let (mpsc_tx, mut mpsc_rx) = mpsc::channel::<WolMessage>(8);
     let mut tasks: JoinSet<()> = JoinSet::new();
 
-    // CHECK: what's less worse, a new Vec or sorting the Vec?
-    //let mut listen_on = cfg.listen_on;
-    //listen_on.sort();
-    //if listen_on[0].ip() == IPV4_UNSPEC {
-    //    listen_on.truncate(1);
-    //}
     let listen_on = match cfg.listen_on.iter().find(|s| s.ip() == IPV4_UNSPEC) {
         Some(addr) => vec![addr.clone()],
         None => cfg.listen_on,
@@ -122,7 +106,7 @@ pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
             log::debug!("listening on socket '{}'", addr);
 
             loop {
-                if token.is_cancelled() { break; }
+                if token.is_cancelled() { log::trace!("[listener][{}] exit", addr); break; }
 
                 let mut buf: [u8; 128] = [0; 128];
                 let (len, from) = match tokio::time::timeout(
@@ -162,7 +146,7 @@ pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
         let mut cooldown_list: HashMap<MacAddr, Instant> = HashMap::new();
         
         loop {
-            if token.is_cancelled() { break; }
+            if token.is_cancelled() { log::trace!("[relay] exit"); break; }
 
             let msg = match tokio::time::timeout(
                 Duration::from_millis(50), 

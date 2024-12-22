@@ -9,9 +9,6 @@ tokio = { version = "1.38", features = [ "full" ] }
 tokio-util = "0.7"
 clap = { version = "4.5", features = [ "derive" ]}
 ctrlc = "3.4"
-shellexpand = "3.1"
-serde = { version = "1.0", features = [ "derive" ] }
-serde_yml = "0"
 log = "0.4"
 simple_logger = { version = "5.0", default-features = false, features = [ "colors" ] }
 

@@ -18,13 +18,12 @@ use pnet::packet::{
 };
 use pnet::util::MacAddr;
 use tokio_util::sync::CancellationToken;
-use serde::Deserialize;
 
 use crate::common;
 
 pub const ETHERTYPE_WOL: u16 = 0x0842;
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Default)]
 pub struct Layer2Config {
     pub interfaces: Vec<String>,
 }
@@ -115,7 +114,7 @@ pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<
         let mut cooldown_list: HashMap<MacAddr, Instant> = HashMap::new();
 
         loop {
-            if token.is_cancelled() { println!("[relay] exit"); break; }
+            if token.is_cancelled() { log::trace!("[relay] exit"); break; }
 
             let wol_msg = match mpsc_rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(msg) => msg,
