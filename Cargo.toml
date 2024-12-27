@@ -13,8 +13,8 @@ log = "0.4"
 simple_logger = { version = "5.0", default-features = false, features = [ "colors" ] }
 
 [profile.release]
-lto = "fat"
+lto = true
 codegen-units = 1
-opt-level = "s"
+opt-level = "z"
 strip = "symbols"
 panic = "abort"
