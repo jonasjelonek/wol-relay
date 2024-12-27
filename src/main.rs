@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, path::PathBuf, thread};
+use std::{net::SocketAddr, thread};
 
 use layer2::Layer2Config;
 use layer4::Layer4Config;
@@ -17,9 +17,6 @@ mod layer4;
 
 #[derive(Parser)]
 struct Cli {
-    #[arg(short, long)]
-    config_file: PathBuf,
-
     #[arg(short, long, default_value_t = LevelFilter::Info)]
     log: LevelFilter,
 
