@@ -5,6 +5,7 @@ use std::fmt::Debug;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use anyhow::{anyhow, Result};
 use pnet::datalink::{
     self, 
     Channel, 
@@ -40,11 +41,15 @@ fn l2_wol_check(pkt: &EthernetPacket) -> bool {
         crate::common::check_wol_payload(pkt.payload())
 }
 
-pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<()>> {
+pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Result<Vec<JoinHandle<()>>> {
     let interfaces: Vec<NetworkInterface> = pnet::datalink::interfaces()
         .into_iter()
         .filter(|iface| cfg.interfaces.contains(&iface.name))
         .collect();
+    if interfaces.len() == 0 {
+        log::error!("no suitable L2 interface available!");
+        return Err(anyhow!("no suitable L2 interfaces available!"));
+    }
 
     let mut handles: Vec<JoinHandle<()>> = Vec::new();
     let mut senders: Vec<(u32, Box<dyn DataLinkSender>)> = Vec::new();
@@ -99,7 +104,7 @@ pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<
                             iface: iface.clone(),
                             pkt,
                             target: common::wol_payload_get_target_mac(eth_pkt.payload()),
-                        }).unwrap();
+                        }).ok();
                     },
                     None => continue,
                 }
@@ -141,5 +146,5 @@ pub fn l2_worker(cfg: Layer2Config, token: CancellationToken) -> Vec<JoinHandle<
     });
 
     handles.push(h);
-    handles
+    Ok(handles)
 }

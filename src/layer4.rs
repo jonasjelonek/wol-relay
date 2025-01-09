@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use std::{fmt::Debug, net::Ipv4Addr};
 use std::net::{IpAddr, SocketAddr, SocketAddrV4};
 
+use anyhow::{anyhow, Result};
 use pnet::ipnetwork::{
     IpNetwork,
     Ipv4Network,
@@ -47,7 +48,7 @@ fn is_private_network(net: &IpNetwork) -> bool {
     }
 }
 
-fn sanitize_destination_networks(mut relay_to: Vec<IpNetwork>) -> Vec<IpNetwork> {
+fn sanitize_destination_networks(mut relay_to: Vec<IpNetwork>) -> Result<Vec<IpNetwork>> {
     let networks_avail = pnet::datalink::interfaces()
         .into_iter()
         .flat_map(|e| e.ips)
@@ -57,8 +58,8 @@ fn sanitize_destination_networks(mut relay_to: Vec<IpNetwork>) -> Vec<IpNetwork>
         })
         .collect::<Vec<IpNetwork>>();
     
-    if networks_avail.len() == 0 { panic!("No available networks!") }
-    if relay_to.len() == 0 { panic!("No relay networks specified!") }
+    if networks_avail.len() == 0 { return Err(anyhow!("no available networks!")) }
+    if relay_to.len() == 0 { return Err(anyhow!("no relay networks specified!")) }
 
     relay_to = relay_to
         .into_iter()
@@ -84,10 +85,10 @@ fn sanitize_destination_networks(mut relay_to: Vec<IpNetwork>) -> Vec<IpNetwork>
     // There can be duplicates in some cases. 
     networks.sort();
     networks.dedup();
-    networks
+    Ok(networks)
 }
 
-pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
+pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> Result<JoinSet<()>> {
     let (mpsc_tx, mut mpsc_rx) = mpsc::channel::<WolMessage>(8);
     let mut tasks: JoinSet<()> = JoinSet::new();
 
@@ -95,16 +96,19 @@ pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
         Some(addr) => vec![addr.clone()],
         None => cfg.listen_on,
     };
-    let networks = sanitize_destination_networks(cfg.relay_to);
+    let networks = sanitize_destination_networks(cfg.relay_to)?;
 
     for addr in listen_on {
         let mpsc_tx = mpsc_tx.clone();
         let token = token.clone();
 
         tasks.spawn(async move {
-            let sock = UdpSocket::bind(addr).await.unwrap();
-            log::debug!("listening on socket '{}'", addr);
+            let sock = match UdpSocket::bind(addr).await {
+                Ok(s) => s,
+                Err(e) => { log::error!("unable to bind to socket: {}", e); return; }
+            };
 
+            log::debug!("listening on socket '{}'", addr);
             loop {
                 if token.is_cancelled() { log::trace!("[listener][{}] exit", addr); break; }
 
@@ -113,8 +117,8 @@ pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
                     Duration::from_millis(100), 
                     sock.recv_from(&mut buf)
                 ).await {
-                    Ok(res) => res.unwrap(),
-                    Err(_) => continue,
+                    Ok(Ok(res)) => res,
+                    Ok(Err(_)) | Err(_) => continue,
                 };
 
                 log::trace!("received message from {}", from);
@@ -127,7 +131,7 @@ pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
                     src: from,
                     target: common::wol_payload_get_target_mac(&buf[..len]),
                     msg: Box::from(&buf[..len])
-                }).await.unwrap();
+                }).await.ok();
             }
         });
     }
@@ -138,10 +142,15 @@ pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
     }
 
     tasks.spawn(async move {
-        let sock = UdpSocket::bind(
-            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
-        ).await.unwrap();
-        sock.set_broadcast(true).unwrap();
+        const SOCKADDR_UNSPEC: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
+        let sock = match UdpSocket::bind(SOCKADDR_UNSPEC).await {
+            Ok(s) => s,
+            Err(e) => { log::error!("unable to bind to socket: {}", e); return; }
+        };
+        match sock.set_broadcast(true) {
+            Ok(_) => (),
+            Err(e) => { log::error!("unable to set SO_BROADCAST on socket: {}", e); return; }
+        };
 
         let mut cooldown_list: HashMap<MacAddr, Instant> = HashMap::new();
         
@@ -172,12 +181,12 @@ pub fn l4_worker(cfg: Layer4Config, token: CancellationToken) -> JoinSet<()> {
                 sock.send_to(
                     &msg.msg, 
                     SocketAddr::new(net.broadcast(), 9)
-                ).await.unwrap();
+                ).await.ok();
             }
 
             cooldown_list.insert(msg.target, Instant::now());
         }
     });
 
-    tasks
+    Ok(tasks)
 }
