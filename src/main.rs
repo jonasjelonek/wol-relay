@@ -16,6 +16,7 @@ mod layer2;
 mod layer4;
 
 #[derive(Parser)]
+#[command(version, about)]
 struct Cli {
     #[arg(short, long, default_value_t = log::LevelFilter::Info)]
     log: log::LevelFilter,
@@ -31,7 +32,7 @@ struct Cli {
 
     #[arg(long)]
     l4_listen_on: Vec<SocketAddr>,
-    
+
     #[arg(long)]
     l4_relay_to: Vec<IpNetwork>,
 }
