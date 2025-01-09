@@ -1,6 +1,6 @@
 [package]
 name = "wol-relay"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = [ "Jonas Jelonek <jelonek.jonas@gmail.com>" ]
 
